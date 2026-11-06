@@ -1,5 +1,6 @@
 # build outputs and downloads
 codec-dmic/out/
+camera/out/
 *.img
 *.img.xz
 *.tar.gz

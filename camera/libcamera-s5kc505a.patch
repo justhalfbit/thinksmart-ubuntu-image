@@ -1,0 +1,51 @@
+diff --git a/src/ipa/libipa/camera_sensor_helper.cpp b/src/ipa/libipa/camera_sensor_helper.cpp
+index 359040e..a9d9d8d 100644
+--- a/src/ipa/libipa/camera_sensor_helper.cpp
++++ b/src/ipa/libipa/camera_sensor_helper.cpp
+@@ -808,6 +808,19 @@ public:
+ };
+ REGISTER_CAMERA_SENSOR_HELPER("ov5647", CameraSensorHelperOv5647)
+ 
++class CameraSensorHelperS5kc505a : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperS5kc505a()
++	{
++		/* Measured on the device: 64 at 10 bits. */
++		blackLevel_ = 4096;
++		/* SMIA analogue gain code, 0x20 = 1x, linear. */
++		gain_ = AnalogueGainLinear{ 1, 0, 0, 32 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("s5kc505a", CameraSensorHelperS5kc505a)
++
+ class CameraSensorHelperOv5670 : public CameraSensorHelper
+ {
+ public:
+diff --git a/src/libcamera/sensor/camera_sensor_properties.cpp b/src/libcamera/sensor/camera_sensor_properties.cpp
+index 20cfd0b..01e00db 100644
+--- a/src/libcamera/sensor/camera_sensor_properties.cpp
++++ b/src/libcamera/sensor/camera_sensor_properties.cpp
+@@ -466,6 +466,22 @@ const CameraSensorProperties *CameraSensorProperties::get(const std::string &sen
+ 				.hblankDelay = 2
+ 			},
+ 		} },
++		{ "s5kc505a", {
++			.unitCellSize = { 1120, 1120 },
++			.testPatternModes = {
++				{ controls::draft::TestPatternModeOff, 0 },
++				{ controls::draft::TestPatternModeSolidColor, 1 },
++				{ controls::draft::TestPatternModeColorBars, 2 },
++				{ controls::draft::TestPatternModeColorBarsFadeToGray, 3 },
++				{ controls::draft::TestPatternModePn9, 4 },
++			},
++			.sensorDelays = {
++				.exposureDelay = 2,
++				.gainDelay = 1,
++				.vblankDelay = 2,
++				.hblankDelay = 2
++			},
++		} },
+ 		{ "ov5670", {
+ 			.unitCellSize = { 1120, 1120 },
+ 			.testPatternModes = {

@@ -28,9 +28,10 @@ git -C "$HUB" merge-base --is-ancestor "$HUB_COMMIT" "$HUB_MAIN" || {
 git -C "$HUB" show "$HUB_COMMIT:scripts/config.template.yaml" > "$WORK/hub-config.template.yaml"
 [ -n "$SECRETS" ] && cp "$SECRETS" "$WORK/secrets.txt" || : > "$WORK/secrets.txt"
 
-# the DMIC fix must be the codec-dmic build (it only exists on the device and in codec-dmic/out)
+# the DMIC fix must be the codec-dmic build (it only exists on the device and in codec-dmic/out);
+# the DTB is camera/build.sh's, which is codec-dmic's DTB plus the front camera nodes
 KO_MD5=$(awk '/snd-soc-msm8916-digital.ko/{print $1}' "$HERE/../codec-dmic/expected.md5")
-DTB_MD5=$(awk '/apq8053-lenovo-cd-18781y.dtb/{print $1}' "$HERE/../codec-dmic/expected.md5")
+DTB_MD5=$(awk '/apq8053-lenovo-cd-18781y.dtb/{print $1}' "$HERE/../camera/expected.md5")
 docker build -q -t thinksmart-image "$HERE" >/dev/null 2>&1
 docker volume create tsimg-work >/dev/null
 docker run --rm -i -v tsimg-work:/w -v "$WORK:/in:ro" -v "$OUT:/out" -v "$HERE:/s:ro" \
@@ -56,15 +57,34 @@ sh /s/initramfs-usb-ncm.sh /w/boot/initramfs
 log "sanitize"
 sh /s/sanitize-rootfs.sh $R /in/hub-config.template.yaml
 
-log "files the image must carry: DMIC fix, audio rules, ALSA plugin, user unit links"
-# codec-dmic/build.sh output (codec-dmic/expected.md5): the DTB with qcom,dmic-sample-rate and the module
+log "files the image must carry: DMIC fix, camera, audio rules, ALSA plugin, user unit links"
+# camera/build.sh output (camera/expected.md5): the DTB with qcom,dmic-sample-rate and the camera nodes;
+# codec-dmic/build.sh output (codec-dmic/expected.md5): the codec module
 need() { [ -e "$1" ] || { echo "missing: ${1#$R}"; exit 1; }; }
 need /w/boot/apq8053-lenovo-cd-18781y.dtb
 [ "$(md5sum < /w/boot/apq8053-lenovo-cd-18781y.dtb | cut -d' ' -f1)" = "$DTB_MD5" ] \
-    || { echo "/boot DTB is not the codec-dmic build: the second mic would be noise"; exit 1; }
+    || { echo "/boot DTB is not the camera/ build (device-setup.sh camera): no camera, and without the DMIC fix the second mic would be noise"; exit 1; }
 ko=$(echo $R/usr/lib/modules/*/kernel/sound/soc/codecs/snd-soc-msm8916-digital.ko)
 need "$ko"
 [ "$(md5sum < "$ko" | cut -d' ' -f1)" = "$KO_MD5" ] || { echo "codec module is not the codec-dmic build"; exit 1; }
+# front camera (device-setup.sh camera): modules for the image's kernel, the libcamera package,
+# the webcam service enabled, and nothing left of the hand-built bring-up
+for m in s5kc505a v4l2loopback; do
+    ko=$(echo $R/usr/lib/modules/*/extra/$m.ko)
+    need "$ko"
+done
+awk '$0 == "Package: thinksmart-camera" {f = 1; next} f && /^Status:/ {print; exit}' $R/var/lib/dpkg/status |
+    grep -q ' installed$' || { echo "thinksmart-camera package not installed (device-setup.sh camera)"; exit 1; }
+need $R/usr/local/bin/tscam-bridge
+need $R/usr/local/share/libcamera/ipa/softisp/s5kc505a.yaml
+need $R/etc/udev/rules.d/70-libcamera-dmabuf.rules
+need $R/etc/modules-load.d/v4l2loopback.conf
+[ -L $R/etc/systemd/system/multi-user.target.wants/thinksmart-camera.service ] \
+    || { echo "thinksmart-camera.service not enabled (device-setup.sh camera)"; exit 1; }
+grep -qE '^video:.*[:,]ubuntu(,|$)' $R/etc/group || { echo "ubuntu is not in the video group (device-setup.sh camera)"; exit 1; }
+for p in home/ubuntu/src/libcamera usr/local/include/libcamera etc/modprobe.d/s5kc505a-manual.conf; do
+    [ ! -e $R/$p ] || { echo "camera bring-up leftover: /$p (device-setup.sh camera)"; exit 1; }
+done
 # speaker S16LE and the disabled DSP capture node; without it the speaker is almost silent
 need $R/home/ubuntu/.config/wireplumber/main.lua.d/99-cd18781y-alsa.lua
 # PipeWire's ALSA plugin, installed by hand, not by dpkg (device-setup.sh alsa-plugin)

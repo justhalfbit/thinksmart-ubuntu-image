@@ -8,7 +8,8 @@ The image is based on [rickx/ubuntu-thinksmart](https://github.com/rickx/ubuntu-
 
 - the voice client [xiaozhi-thinksmart-client](https://github.com/justhalfbit/xiaozhi-thinksmart-client): wake word, conversation screen, sleep hours, brightness, online updates;
 - the Xiaozhi hub [xiaozhi-hub-server](https://github.com/justhalfbit/xiaozhi-hub-server): on-device speech recognition, connects to LLM and text-to-speech providers, with a web admin page;
-- device fixes: both microphones, the speaker, screen blanking and proximity wake, Wi-Fi stability, GPU white-screen/freeze patches and more.
+- device fixes: both microphones, the speaker, screen blanking and proximity wake, Wi-Fi stability, GPU white-screen/freeze patches and more;
+- the front camera, as an ordinary webcam `/dev/video10` that browsers and video-call apps can pick, and through libcamera for photos (up to 2600×1960).
 
 The interface and the wake word are Chinese for now.
 
@@ -891,11 +892,12 @@ Compared with the upstream image, besides dropping the Plasma desktop and bootin
 - Logs live only in the systemd journal (persistent, at most 64 MB and one month); rsyslog, which wrote a second copy to `/var/log`, is off. Read logs with `journalctl`.
 - No crash dumps (core dumps), to save disk space; zram compressed memory is on.
 - ModemManager, avahi and udisks2, which aren't needed, are disabled.
+- The front camera (not working upstream): our own S5KC505A driver and device-tree nodes, libcamera 0.8's GPU software ISP for exposure, white balance and colour, and the `thinksmart-camera` service that turns it into an ordinary webcam, `/dev/video10` (1280×720, 30 fps). The camera only runs while a program reads it. `ubuntu` is in the `video` group, so `cam -l` and `cam` work directly. How it works and the hardware details: [camera/README.md](camera/README.md).
 
 Known limitations:
 
 - Wi-Fi can be set up on the screen without a network on first boot; speech recognition runs on the device, while the LLM and text-to-speech (Edge TTS by default) need the internet.
-- The camera doesn't work (upstream is still researching it).
+- The camera takes 1–2 s from a program opening it to the first picture (it is off when unused); colour uses one vendor-calibrated matrix for every light, with no lens-shading correction.
 - The flashed system can't be reached over a USB cable, only over Wi-Fi (see [USB network after flashing](#usb-network-after-flashing)).
 - To block pinch zoom the screen only takes the first finger. When typing fast on the on-screen keyboard with two alternating fingers, a second finger that lands before the first one lifts is dropped, losing a character. Type Wi-Fi passwords slowly, one finger at a time.
 - The GPU, Wi-Fi and Bluetooth firmware in the image come from the same sources as upstream's (following upstream).
@@ -920,6 +922,7 @@ Known limitations:
 | `update/` | Online updates of the voice client |
 | `mesa/` | Build script and patches of the patched Mesa (GPU white screen and hang fixes) |
 | `codec-dmic/`, `kernel/` | Driver and device-tree patch for the second microphone, and the kernel environment it is built in |
+| `camera/` | Front camera: sensor driver, device tree, libcamera patch and tuning, the `/dev/video10` bridge service, and a tool to re-derive the parameters from the stock firmware |
 | `zram/` | Compressed memory (zram) |
 
-This repository is released under the MIT license, see [LICENSE](LICENSE).
+This repository is released under the MIT license, see [LICENSE](LICENSE). Exceptions in `camera/`: the kernel driver `s5kc505a/` is GPL-2.0, the device-tree fragment is BSD-3-Clause like the kernel's dts, and `tscam-bridge.cpp` is GPL-2.0+ (the source files carry SPDX tags); `libcamera-s5kc505a.patch` follows libcamera's LGPL-2.1+.
