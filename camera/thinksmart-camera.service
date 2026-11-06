@@ -1,0 +1,16 @@
+[Unit]
+Description=ThinkSmart front camera as a standard webcam (/dev/video10)
+After=systemd-modules-load.service systemd-udev-settle.service
+
+[Service]
+Type=simple
+Environment=LIBCAMERA_LOG_LEVELS=*:WARN
+# options come from /etc/modprobe.d/v4l2loopback.conf
+ExecStartPre=/sbin/modprobe v4l2loopback
+# The camera only runs while an application is reading /dev/video10.
+ExecStart=/usr/local/bin/tscam-bridge -d /dev/video10 -s 1280x720 -f 30
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

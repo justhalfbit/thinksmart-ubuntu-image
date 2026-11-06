@@ -11,11 +11,17 @@
 #   sudo sh image/device-setup.sh codec            the DMIC clock fix: codec-dmic/out/ (codec-dmic/build.sh)
 #                                                  module into /lib/modules and DTB into /boot (writes the boot
 #                                                  partition: ask the owner first), checked against expected.md5
+#   sudo sh image/device-setup.sh camera           the front camera: camera/out/ (camera/build.sh,
+#                                                  camera/build-libcamera.sh) sensor and v4l2loopback modules,
+#                                                  the DTB with the DMIC fix and the camera nodes into /boot
+#                                                  (writes the boot partition: ask the owner first; run after
+#                                                  codec), libcamera package, /dev/video10 webcam service
 #   sudo sh image/device-setup.sh hold             keep the packages in image/held-packages.txt at their tested
 #                                                  versions (apt-mark hold); the kernel isn't a package
 #   sudo sh image/device-setup.sh alsa-plugin DEB  PipeWire's ALSA plugin taken out of Ubuntu's pipewire-alsa
 #                                                  1.0.5 .deb (apt can't install it next to neon's pipewire 1.2)
-# Each step can be run again. Reboot after kiosk, purge and codec and check the screen and sound.
+# Each step can be run again. Reboot after kiosk, purge, codec and camera and check the screen,
+# the sound and the camera.
 set -e
 cd "$(dirname "$0")/.."
 [ "$(id -u)" = 0 ] || { echo "run with sudo"; exit 1; }
@@ -168,6 +174,78 @@ codec() {
     echo "installed; reboot to load them"
 }
 
+# Packages the first, hand-built camera bring-up installed on the device to compile libcamera
+# there (camera/README.md); none of them is needed at run time
+CAMERA_BUILD_ONLY="systemd-dev libpciaccess-dev libdrm-dev xorg-sgml-doctools x11proto-dev libxau-dev
+ libxdmcp-dev xtrans-dev libpthread-stubs0-dev libxcb1-dev libx11-dev libglx-dev libgl-dev libegl-dev
+ libevent-dev libgles-dev libgmp-dev libidn2-dev libp11-kit-dev libtasn1-6-dev nettle-dev libgnutls28-dev
+ libjpeg-turbo8-dev libjpeg8-dev libjpeg-dev libudev-dev ninja-build pkgconf pkgconf-bin"
+
+camera() {
+    (cd camera/out && md5sum -c --quiet ../expected.md5) \
+        || { echo "camera/out/ missing or not the expected build: run camera/build.sh"; exit 1; }
+    deb=$(ls camera/out/thinksmart-camera_*_arm64.deb 2>/dev/null | sort -V | tail -1)
+    [ -n "$deb" ] || { echo "no camera/out/thinksmart-camera_*_arm64.deb: run camera/build-libcamera.sh"; exit 1; }
+    rel=$(uname -r)
+    for m in s5kc505a v4l2loopback; do
+        v=$(modinfo -F vermagic camera/out/$m.ko | cut -d' ' -f1)
+        [ "$v" = "$rel" ] || { echo "camera/out/$m.ko is for kernel $v, this is $rel"; exit 1; }
+    done
+    install -d /lib/modules/$rel/extra
+    install -m 644 camera/out/s5kc505a.ko camera/out/v4l2loopback.ko /lib/modules/$rel/extra/
+    depmod -a
+    # the DMIC fix is in this DTB too (camera/build.sh applies the codec-dmic patch)
+    install -m 644 camera/out/apq8053-lenovo-cd-18781y.dtb /boot/apq8053-lenovo-cd-18781y.dtb
+
+    # leftovers of the hand-built bring-up: its /usr/local install (the package replaces it),
+    # sources, test output and the manual-load switch
+    if ! dpkg-query -W -f='${Status}' thinksmart-camera 2>/dev/null | grep -q 'ok installed'; then
+        rm -rf /usr/local/include/libcamera /usr/local/libexec/libcamera /usr/local/share/libcamera \
+            /usr/local/lib/aarch64-linux-gnu/libcamera* /usr/local/lib/aarch64-linux-gnu/pkgconfig/libcamera* \
+            /usr/local/lib/libcamera* /usr/local/lib/pkgconfig/libcamera* \
+            /usr/local/bin/cam /usr/local/bin/libcamerify /usr/local/bin/tscam-bridge
+    fi
+    rm -rf $H/src/libcamera $H/src/meson-* $H/camera $H/camera-test*
+    rmdir $H/src 2>/dev/null || true
+    rm -f /etc/modprobe.d/s5kc505a-manual.conf /etc/ld.so.conf.d/libcamera-local.conf
+
+    # apt resolves the package's runtime libraries (the purge step empties the lists)
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "./$deb"
+    installed() ( set -f; dpkg-query -W -f='${Package} ${Status}\n' $1 2>/dev/null | awk '/ installed$/{print $1}' )
+    # Only these packages, one at a time, never --autoremove: the bring-up's apt run upgraded systemd
+    # and udev as dependencies and left them marked automatic, and some of these -dev packages are
+    # tied to systemd's version. A package is purged only if apt can remove it without touching
+    # anything outside this list; whatever cannot be removed cleanly stays (it only costs disk space).
+    left=$(installed "$CAMERA_BUILD_ONLY")
+    progress=1
+    while [ -n "$left" ] && [ $progress = 1 ]; do
+        progress=0
+        for p in $left; do
+            sim=$(apt-get -s purge "$p" 2>/dev/null) || continue
+            gone=$(echo "$sim" | awk '/^(Purg|Remv) /{print $2}')
+            [ -z "$(echo "$gone" | grep -v -x -F "$left")" ] || continue
+            # shellcheck disable=SC2086
+            DEBIAN_FRONTEND=noninteractive apt-get -y -q purge $gone >/dev/null && progress=1
+        done
+        left=$(installed "$CAMERA_BUILD_ONLY")
+    done
+    [ -z "$left" ] || echo "build-only packages kept (apt would remove more than them):" $left
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+    install -m 644 camera/thinksmart-camera.service /etc/systemd/system/
+    install -m 644 camera/70-libcamera-dmabuf.rules /etc/udev/rules.d/
+    install -m 644 camera/v4l2loopback-options.conf /etc/modprobe.d/v4l2loopback.conf
+    install -m 644 camera/v4l2loopback-load.conf /etc/modules-load.d/v4l2loopback.conf
+    # libcamera applications as the owner: the software ISP allocates through /dev/udmabuf
+    usermod -aG video $U
+    systemctl daemon-reload
+    systemctl enable thinksmart-camera.service
+    sync
+    echo "installed; reboot to load the new DTB, then: cam -l; v4l2-ctl -d /dev/video10 --all"
+}
+
 alsa_plugin() {
     [ -f "${1:-}" ] || { echo "usage: device-setup.sh alsa-plugin pipewire-alsa_1.0.5-*_arm64.deb"; exit 1; }
     t=$(mktemp -d)
@@ -186,8 +264,8 @@ hold() {
 }
 
 case "$1" in
-    files|kiosk|tidy|codec|hold) "$1" ;;
+    files|kiosk|tidy|codec|camera|hold) "$1" ;;
     update|purge) cmd=$1; shift; "$cmd" "$@" ;;
     alsa-plugin) shift; alsa_plugin "$@" ;;
-    *) sed -n '2,18p' "$0"; exit 1 ;;
+    *) sed -n '2,24p' "$0"; exit 1 ;;
 esac

@@ -1,0 +1,3 @@
+# Let members of the video group allocate dma-bufs for the libcamera software ISP
+KERNEL=="udmabuf", GROUP="video", MODE="0660"
+SUBSYSTEM=="dma_heap", GROUP="video", MODE="0660"

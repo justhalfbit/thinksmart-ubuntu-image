@@ -1,0 +1,117 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Front camera (Samsung S5KC505A) for the Lenovo ThinkSmart View CD-18781Y.
+ * Values taken from the stock Android device tree and camera_config.xml:
+ *   CCI master 0, slave 0x37, CSIPHY0/CSID0, 2 data lanes,
+ *   MCLK0 24 MHz on gpio26, RESET gpio40, STANDBY gpio39,
+ *   VIO = L6, DVDD = L2 switched by gpio118, AVDD = L17 switched by gpio119.
+ *
+ * Include at the end of apq8053-lenovo-cd-18781y.dts.
+ */
+
+/ {
+	cam_avdd: regulator-cam-avdd {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_avdd";
+		regulator-min-microvolt = <2850000>;
+		regulator-max-microvolt = <2850000>;
+		gpio = <&tlmm 119 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		vin-supply = <&pm8953_l17>;
+		startup-delay-us = <1000>;
+		pinctrl-0 = <&cam_avdd_en_default>;
+		pinctrl-names = "default";
+	};
+
+	cam_dvdd: regulator-cam-dvdd {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_dvdd";
+		regulator-min-microvolt = <1200000>;
+		regulator-max-microvolt = <1200000>;
+		gpio = <&tlmm 118 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		vin-supply = <&pm8953_l2>;
+		startup-delay-us = <1000>;
+		pinctrl-0 = <&cam_dvdd_en_default>;
+		pinctrl-names = "default";
+	};
+};
+
+&tlmm {
+	cam_avdd_en_default: cam-avdd-en-default-state {
+		pins = "gpio119";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+		output-low;
+	};
+
+	cam_dvdd_en_default: cam-dvdd-en-default-state {
+		pins = "gpio118";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+		output-low;
+	};
+
+	cam_front_ctrl_default: cam-front-ctrl-default-state {
+		pins = "gpio39", "gpio40";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+	};
+};
+
+&camss {
+	vdda-supply = <&pm8953_s3>;
+	status = "okay";
+
+	ports {
+		port@0 {
+			reg = <0>;
+
+			csiphy0_ep: endpoint {
+				clock-lanes = <7>;
+				data-lanes = <0 1>;
+				remote-endpoint = <&cam_front_ep>;
+			};
+		};
+	};
+};
+
+&cci {
+	pinctrl-0 = <&cci0_default>, <&camss_mclk0_default>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&cci_i2c0 {
+	camera@37 {
+		compatible = "samsung,s5kc505a";
+		reg = <0x37>;
+
+		clocks = <&gcc GCC_CAMSS_MCLK0_CLK>;
+		assigned-clocks = <&gcc GCC_CAMSS_MCLK0_CLK>;
+		assigned-clock-rates = <24000000>;
+
+		reset-gpios = <&tlmm 40 GPIO_ACTIVE_LOW>;
+		powerdown-gpios = <&tlmm 39 GPIO_ACTIVE_LOW>;
+		pinctrl-0 = <&cam_front_ctrl_default>;
+		pinctrl-names = "default";
+
+		vio-supply = <&pm8953_l6>;
+		avdd-supply = <&cam_avdd>;
+		dvdd-supply = <&cam_dvdd>;
+
+		orientation = <0>; /* front */
+		rotation = <180>; /* module is mounted upside down */
+
+		port {
+			cam_front_ep: endpoint {
+				data-lanes = <1 2>;
+				link-frequencies = /bits/ 64 <480000000 516000000>;
+				remote-endpoint = <&csiphy0_ep>;
+			};
+		};
+	};
+};

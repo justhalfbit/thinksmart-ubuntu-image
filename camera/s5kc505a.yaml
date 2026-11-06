@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: CC0-1.0
+#
+# libcamera software ISP tuning for the Samsung S5KC505A, the front camera of the
+# Lenovo ThinkSmart View (CD-18781Y). Installed as
+# /usr/local/share/libcamera/ipa/softisp/s5kc505a.yaml by the thinksmart-camera package.
+#
+# Colour correction matrix: the vendor calibration, read from the stock Android
+# firmware's libchromatix_s5kc505a_default_preview_3a.so (first AWB-linked CCM,
+# file offset 0x4428). Rows are R', G', B' and sum to 1.
+%YAML 1.1
+---
+version: 1
+algorithms:
+  - BlackLevel:
+  - Awb:
+  - Ccm:
+      ccms:
+        - ct: 4000
+          ccm: [  1.698, -0.825,  0.127,
+                 -0.312,  1.478, -0.166,
+                  0.004, -0.607,  1.603 ]
+  - Adjust:
+  - Agc:
+      # libcamera's default is 0.16; the panel is used at arm's length indoors
+      relativeLuminanceTarget: 0.2
+...
