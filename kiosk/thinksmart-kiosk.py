@@ -325,7 +325,7 @@ def page_commands(uri, url):
 
 
 def reachable(url):
-    """True once something answers at url (any HTTP status counts: the page itself decides)."""
+    """True once something answers at url (any HTTP status counts, except gateway/upstream errors)."""
     if not url:
         return False
     if url.startswith('file://'):
@@ -333,7 +333,12 @@ def reachable(url):
     try:
         urllib.request.urlopen(url, timeout=2).close()
         return True
-    except urllib.error.HTTPError:
+    except urllib.error.HTTPError as e:
+        # Gateway or upstream server errors (e.g. reverse proxy starting up before the backend,
+        # or backend restarting) mean the target application is not ready yet; stay on the
+        # welcome page with retry instead of rendering an unhandled 502/503 error.
+        if e.code in (502, 503, 504):
+            return False
         return True
     except (OSError, ValueError):
         return False

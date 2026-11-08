@@ -66,3 +66,22 @@ def test_a_command_that_raises_still_answers():
     r = kiosk.run_command(breaks, {'cmd': 'forget'}, None)
     assert r['ok'] is False and r['reason'] == 'failed'
     assert kiosk.run_command(lambda m, p: {'ok': True}, {'cmd': 'scan'}, None) == {'ok': True}
+
+
+def test_reachable_gateway_errors(monkeypatch):
+    import urllib.error
+
+    # 200 OK is reachable
+    monkeypatch.setattr(kiosk.urllib.request, 'urlopen', lambda url, timeout: types.SimpleNamespace(close=lambda: None))
+    assert kiosk.reachable('http://127.0.0.1:8090/') is True
+
+    # 404 or other client errors are reachable (the target application answers and decides)
+    monkeypatch.setattr(kiosk.urllib.request, 'urlopen',
+                        lambda url, timeout: (_ for _ in ()).throw(urllib.error.HTTPError(url, 404, 'Not Found', {}, None)))
+    assert kiosk.reachable('http://127.0.0.1:8090/') is True
+
+    # 502, 503, 504 (upstream/gateway error during startup) must NOT count as reachable
+    for code in (502, 503, 504):
+        monkeypatch.setattr(kiosk.urllib.request, 'urlopen',
+                            lambda url, timeout, c=code: (_ for _ in ()).throw(urllib.error.HTTPError(url, c, 'Gateway Error', {}, None)))
+        assert kiosk.reachable('http://127.0.0.1:8090/') is False
