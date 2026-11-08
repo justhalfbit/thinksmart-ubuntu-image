@@ -60,6 +60,7 @@ bluetooth/60-thinksmart-speaker.lua /etc/wireplumber/bluetooth.lua.d/60-thinksma
 zram/thinksmart-zram.service        /etc/systemd/system/thinksmart-zram.service     644 root boot
 zram/99-zram.conf                   /etc/sysctl.d/99-zram.conf                      644 root boot
 kiosk/timesyncd-cn.conf             /etc/systemd/timesyncd.conf.d/thinksmart.conf   644 root system:systemd-timesyncd.service
+kiosk/09-auto-timezone.sh           /etc/NetworkManager/dispatcher.d/09-auto-timezone.sh 755 root none
 kiosk/wifi-powersave-off.conf       /etc/NetworkManager/conf.d/zz-thinksmart-wifi-powersave-off.conf 644 root boot
 kiosk/coredump-off.conf             /etc/systemd/coredump.conf.d/90-thinksmart-kiosk.conf 644 root none
 image/thinksmart-ssh-hostkeys.service /etc/systemd/system/thinksmart-ssh-hostkeys.service 644 root none
